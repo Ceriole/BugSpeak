@@ -234,7 +234,7 @@
       //;"undefined-global",
 
       // Luadoc
-      "luadoc-miss-module-name",
+      //;"luadoc-miss-module-name",
       //;"circle-doc-class",
       //;"doc-field-no-class",
       //;"duplicate-doc-alias",

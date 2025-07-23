@@ -1,6 +1,6 @@
 ---BugSpeak v0.1.1 by @ceriole
 ---Loosely based upon KorboSpeak by @korbosoft
--- @module BugSpeak
+---@module 'BugSpeak.lua'
 
 ---@class RunLater
 ---@author @manuel_2867
