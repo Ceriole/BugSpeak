@@ -47,7 +47,27 @@ my_speech:addSound({'path.to.my.speech.sound1', 'path.to.my.speech.sound2'})
 my_speech:addSound(sounds['path.to.my.speech.sound'])
 ```
 
-### Please check the [Wiki](https://github.com/Ceriole/BugSpeak/wiki) for more information!
+### Speech options:
+```lua
+-- The following functions return the speech object they were called on. --
+    :setRate(1)                 -- delay for speech in ticks
+    :setVolume(.3)              -- sets the volume of the played sounds
+    :setBasePitch(1)            -- the pitch to add a random value to... (see pitch range)
+    :setPitchRange(0.05)        -- sets the range of pitches of the sounds played(-/+)
+    :setMaxLength(math.huge)    -- sets the maximum number of characters to speak per chat message
+    :setPolyphony(true)         -- sets if multiple speech sounds can overlap
+    :setSubtitleVerb('speaks')  -- sets the subtitle for your speech sound: '<Player> speaks'
+    :setSpacesPause(true)       -- sets wether or not spaces should make a sound.
+
+    :play('testing testing')    -- appends a message to the speech queue, as if you entered a chat message.
+    :stop()                     -- stops all speech sounds and clears the queue
+  
+-- The following functions do NOT return the speech object. (You really shouldn't use these.) --
+    :playSpeechSound()          -- plays a single random speech sound.
+    :tick()                     -- ticks the speech object. You should not use this function
+                                -- unless you are making your own events.TICK function to
+                                -- run BugSpeak.
+```
 
 # Recommendations
 * [Microsoft Visual Studio Code](https://code.visualstudio.com/)

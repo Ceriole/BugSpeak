@@ -1,0 +1,16 @@
+name: Upload Script
+
+on:
+  push:
+      tags: ["v*.*.*"] 
+
+jobs:
+  upload-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Upload BugSpeak.lua
+        uses: actions/upload-artifact@v4
+        with:
+            name: BugSpeak ${{ github.ref_name }}
+            path: |
+                BugSpeak.lua
