@@ -26,7 +26,7 @@ jobs:
             docs
       
       - name: Upload to Wiki
-        uses: Decathlon/wiki-page-creator-action@v2.0.2
+        uses: docker://decathlon/wiki-page-creator-action:latest
         env:
           ACTION_MAIL: richie0415@hotmail.com
           ACTION_NAME: Ceriole
