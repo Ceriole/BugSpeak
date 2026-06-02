@@ -1,5 +1,6 @@
 {
     "Lua.diagnostics.globals": [
         "vanilla_model"
-    ]
+    ],
+    "figura.librariesFolderPath": "/home/bug/.local/share/.minecraft/figura/avatars/libraries/"
 }

@@ -1,5 +1,11 @@
----BugSpeak v0.1.1 by @ceriole
+---BugSpeak v0.1.2 by @ceriole
 ---Loosely based upon KorboSpeak by @korbosoft
+
+
+--- I highly recommend not changing this value.
+--- This is to prevent abuse/annoyance from trying to play too many sounds at once.
+local SAFE_SPEECH_LENGTH = 64
+
 
 ---@class RunLater
 ---@author @manuel_2867
@@ -21,7 +27,7 @@ local RunLater = {tmrs={}, t=0}
 ---@param next function Function to run after amount of ticks, or after the predicate function returned true
 function RunLater.add(ticks, next)
 	if not next then return end
-    local is_delay= type(ticks) =="number"
+    local is_delay= type(ticks) == 'number'
     table.insert(RunLater.tmrs, {
 		t = is_delay and RunLater.t + ticks,
 		p = is_delay and function()end or ticks,
@@ -41,19 +47,23 @@ function RunLater.tick()
     end
 end
 
+
+---@alias Speech.SpeechCallback function<string> callback function that runs whenever a speech sound is played. Can be used for custom visualizers or other effects. Set by Speech.setCallback.
+
 ---Speech object.
 ---@class Speech
----@field sounds [Sound] A list of sound resources. Use mono channel sounds, otherwise they will be heard globally!
----@field rate number Rate of speech, how many ticks to wait per speech sound.
----@field volume number Volume of speech sound.
----@field basePitch number The base pitch to start at. nil = 1.0
----@field pitchRange number Range of pitch randomization. Zero or nil disables random pitch.
----@field maxLength number Maximum amount of text characters to speak.
----@field polyphony boolean Set to true if you want speech sounds to overlap.
----@field subtitleVerb string The subtitle to display when this character speaks and somone hears it.
----@field spacesPause boolean If true, pause self.rate ticks whenever spaces are encountered.
+---@field private sounds table<string, [Sound]> A list of sound resources. Use mono channel sounds, otherwise they will be heard globally!
+---@field private rate integer Rate of speech, how many ticks to wait per speech sound.
+---@field private volume number Volume of speech sound.
+---@field private basePitch number The base pitch to start at. nil = 1.0
+---@field private pitchRange number Range of pitch randomization. Zero or nil disables random pitch.
+---@field private maxLength integer Maximum amount of text characters to speak.
+---@field private polyphony boolean Set to true if you want speech sounds to overlap.
+---@field private subtitleVerb string The subtitle to display when this character speaks and somone hears it.
+---@field private spacesPause boolean If true, pause self.rate ticks whenever spaces are encountered.
 ---@field private queue string The string of currently playing characters.
 ---@field private currentSound Sound The currently playing sound object.
+---@field private speechCallback Speech.SpeechCallback A callback function that runs whenever a speech sound is played. Can be used for custom visualizers or other effects.
 local Speech = {}
 Speech.__index = Speech
 
@@ -68,37 +78,96 @@ function Speech.new(o)
 	o.volume = 1
 	o.basePitch = 1
 	o.pitchRange = 0.25
-	o.maxLength = math.huge
+	o.maxLength = SAFE_SPEECH_LENGTH
 	o.polyphony = false
 	o.subtitleVerb = 'speaks'
 	o.spacesPause = true
-
+	
 	o.queue = nil
 	o.currentSound = nil
+
+	o.speechCallback = nil
     return o
 end
 
+---@alias SpeechSound string|Sound
+---@alias SpeechSoundList [SpeechSound]
+---@alias SpeechSoundMap table<string|number, SpeechSound|SpeechSoundList>
+
 ---Add one or more sounds as a string or Sound resource.
----@param sound string|Sound|[string|Sound] The sound resource(s) or sound path(s) to add.
+---
+---String keys in mapping tables are treated as character groups.
+---
+--- Advanced mapping Example:
+--- ```lua
+--- { 
+--- 	["aeiou"] = {"voices.vowel1", "voices.vowel2"}, -- Randomized vowel1/2 for all vowels
+--- 	["!?"] = "click", -- "click" sound for both ! and ?
+--- 	"fallback" -- fallback sound
+--- }
+--- ```
+---
+---@param sound SpeechSound|SpeechSoundList|SpeechSoundMap The sound resource(s) or sound path(s) to add.
 ---@return self
 ---@see sounds
 ---@see Sound
 function Speech:addSound(sound)
-	if type(sound) == 'table' then
-		for _,s in ipairs(sound) do
-			self:addSound(s)
-		end
-	elseif type(sound) == 'Sound' then
-		self.sounds[#self.sounds+1] = sound
-	elseif type(sound) == 'string' then
-		if sound and sounds:isPresent(sound) then
-			self.sounds[#self.sounds+1] = sounds[sound]
-		else
-			error('BugSpeak: Sound "'..tostring(sound)..'" does not exist.')
-		end
-	else
-		error('BugSpeak: Sound is nil or is not a sound resource or string.')
+	if type(sound) == 'string' then
+		local s = sounds[sound]
+		if type(s) ~= 'Sound' then error('BugSpeak: Sound "'..tostring(s)..'" is not a sound resource or string. (multi-sound addSound(...))') return self end
+		sound = s
 	end
+	if type(sound) == 'Sound' then
+		if not self.sounds[''] then self.sounds[''] = {} end
+		self.sounds[''][#self.sounds['']+1] = sound
+	end
+	
+	if type(sound) == 'table' then
+		for key, s in pairs(sound) do
+			if type(s) == 'string' then
+				s = sounds[s]
+			end
+			if type(s) ~= 'Sound' then error('BugSpeak: Sound "'..tostring(s)..'" is not a sound resource or string. (multi-sound addSound(...))') return self end
+			local chars = type(key) == 'string' and key:lower() or ''
+			for c in chars:gmatch('.') do
+				if not self.sounds[c] then self.sounds[c] = {} end
+				self.sounds[c][#self.sounds[c]+1] = s
+			end
+			if chars == "" then
+				if not self.sounds[''] then self.sounds[''] = {} end
+				self.sounds[''][#self.sounds['']+1] = s
+			end
+		end
+	end
+	return self
+end
+
+local function isImmediateChild(name, prefix)
+	prefix = prefix:gsub('%.+$', '')
+	if prefix == '' then return select(2, name:gsub('%.', '')) == 0 end
+	if name:sub(1, #prefix) ~= prefix then return false end
+	local rest = name:sub(#prefix + 2)
+	if rest == '' then return false end
+	return not rest:find('%.')
+end
+
+---Add one or more sounds from the custom sound list using a `prefix`.
+---@param prefix string The prefix to search for in the custom sound list.
+---@param chars string? A string of characters to map the found sounds to. Each character in the string will be mapped to all found sounds. If nil or empty, maps found sounds to the generic "" key.
+---@return self
+---@see string.find
+---@see sounds
+---@see Sound
+function Speech:addSounds(prefix, chars)
+	-- remove trailing dots.
+	prefix = prefix:gsub('%.+$', '')
+	local found = {}
+	for _, sound in ipairs(sounds:getCustomSounds()) do
+		if isImmediateChild(sound, prefix) then
+			found[#found+1] = sound
+		end
+	end
+	self:addSound(chars and {[chars] = found} or found)
 	return self
 end
 
@@ -112,25 +181,29 @@ function Speech:stop() self:clearQueue() if self.currentSound then self.currentS
 ---@return self
 function Speech:clearSounds() self:stop() self.sounds = {} return self end
 ---Sets the speech rate.
----@param rate? number (Optional) The speech rate in ticks. If nil, sets rate to 1.
+---@param rate? integer (Optional) The speech rate in ticks. If nil, sets rate to 1. Minimum is 1.
 ---@return self
 function Speech:setRate(rate) self.rate = math.max(rate or 1, 1) return self end
 ---Sets the speech volume.
----@param volume? number (Optional) The volume. If nil, sets volume to 1.
+---@param volume? number (Optional) The volume. If nil, sets volume to 1. Maximum is 1.
 ---@return self
-function Speech:setVolume(volume) self.volume = math.max(volume or 1, 0) return self end
+function Speech:setVolume(volume) self.volume = math.max(math.min(volume or 1, 1), 0) return self end
 ---Sets the base pitch.
----@param basePitch? number (Optional) The base pitch. If nil, sets base pitch to 1.
+---@param basePitch? number (Optional) The base pitch. If nil, sets base pitch to 1. Minimum is 0.1.
 ---@return self
 function Speech:setBasePitch(basePitch) self.basePitch = math.max(basePitch or 1, 0.1) return self end
 ---Sets the pitch range.
----@param pitchRange? number (Optional) The pitch range. If nil, sets pitch range to 0.25.
+---@param pitchRange? number (Optional) The pitch range. If nil, sets pitch range to 0.25. Minimum is 0, no random pitch change.
 ---@return self
 function Speech:setPitchRange(pitchRange) self.pitchRange = math.max(pitchRange or 0.25, 0) return self end
 ---Sets the maximum speech length.
----@param maxLength? number (Optional) The maximum speech length. If nil, disables maximum length.
+---@param maxLength? number (Optional) The maximum speech length. If nil, defaults to SAFE_SPEECH_LENGTH (64).
 ---@return self
-function Speech:setMaxLength(maxLength) self.maxLength = math.max(maxLength or math.huge, 1) return self end
+function Speech:setMaxLength(maxLength) self.maxLength = math.max(math.min(maxLength, SAFE_SPEECH_LENGTH) or SAFE_SPEECH_LENGTH, 1) return self end
+---Sets the maximum speech length to 1, so only one character per message.
+---@return self
+---@see Speech.setMaxLength
+function Speech:setOneShot() return self:setMaxLength(1) end
 ---Sets if polyphony is enabled.
 ---@param polyphony? boolean (Optional) Polyphony. If true, sounds can play on top of eachother. If false, only one sound can play at a time. If nil, disables polyphony.
 ---@return self
@@ -143,20 +216,25 @@ function Speech:setSubtitleVerb(verb) self.subtitleVerb = verb return self end
 ---@param spacesPause? boolean (Optional) If true, pause for self.rate ticks whenever spaces are encountered. If false, ignore spaces. If nil, enables pausing.
 ---@return self
 function Speech:setSpacesPause(spacesPause) self.spacesPause = spacesPause and spacesPause or false return self end
+---Sets up a callback function that runs whenever a speech sound is played. Can be used for custom visualizers or other effects.
+---@param callback Speech.SpeechCallback The callback function. It will be passed the character that was spoken and the sound that was played.
+---@return self
+function Speech:setCallback(callback) self.speechCallback = callback return self end
 ---Queues up speech blips to play.
 ---@param msg? string (Optional) The message to play. If nil, queues 1 blip.
 ---@return self
 function Speech:play(msg)
-	self.queue = (self.queue or '') .. (msg or '_'):sub(1,self.maxLength)
+	self.queue = (self.queue or '') .. (msg:lower() or '_'):sub(1,self.maxLength)
 	return self
 end
 
----Returns the base pitch of the speech sound. If
----@return number basePitch The base pitch of this speech object.
+
+---Returns a randomized pitch for playing the speech sound.
+---@return number pitch A randomized pitch from this speech object.
 ---@see Speech.basePitch
 ---@see Speech.pitchRange
 ---@private
-function Speech:getSpeechPitch()
+function Speech:rollSpeechPitch()
 	if (self.pitchRange or 0) > 0 then
 		local basePitch = (self.basePitch or 1) - (self.pitchRange / 2)
 		return basePitch + math.random() * self.pitchRange
@@ -166,15 +244,18 @@ function Speech:getSpeechPitch()
 end
 
 ---Plays a randomized speech sound.
-function Speech:playSpeechSound()
+---@param char string? (Optional) The character to play a sound for. If nil, plays a random sound from the generic list.
+function Speech:playSpeechSound(char)
 	if not self.polyphony and self.currentSound then
 		self.currentSound:stop()
 	end
-	self.currentSound = self.sounds[math.random(#self.sounds)]
+	local list = self.sounds[char] or (self.sounds[''] or {})
+	if not list or #list < 1 and char then return end
+	self.currentSound = list[math.random(#list)]
 		:pos(player:getPos())
 		:volume(self.volume)
-		:pitch(self:getSpeechPitch())
-		:subtitle((player:getName()..' '..self.subtitleVerb) and self.subtitleVerb or nil)
+		:pitch(self:rollSpeechPitch())
+		:subtitle(self.subtitleVerb and (player:getName()..' '..self.subtitleVerb) or nil)
 		:play()
 end
 
@@ -182,7 +263,12 @@ end
 function Speech:tick()
 	if self.queue and #self.queue > 0 and world.getTime() % self.rate == 0 then
 		local c = self.queue:sub(1,1)
-		if c ~= ' ' or (not self.spacesPause) then self:playSpeechSound() end
+		if c ~= ' ' or (not self.spacesPause) then
+			self:playSpeechSound(c)
+			if self.speechCallback then
+				self.speechCallback(c)
+			end
+		end
 		self.queue = self.queue:sub(2)
 		if #self.queue == 0 then
 			self.queue = nil
@@ -196,7 +282,8 @@ end
 ---@see events
 function Speech:chat_send_message(msg)
 	local m = msg
-	if #self.sounds < 1 then return msg end
+	if not self.sounds[''] or (#self.sounds[''] < 1 and #self.sounds == 1) then return msg end
+
 	if msg:find('^/say ') then m = msg:sub(6) goto skip_cmd_check end
 	if msg:find('^/') then return msg end
 	::skip_cmd_check::

@@ -1,2 +1,2 @@
-require("BugSpeak"):new()
+require('BugSpeak'):new()
   :addSound('speak')
