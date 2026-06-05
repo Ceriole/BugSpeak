@@ -1,4 +1,4 @@
----BugSpeak v0.1.2 by @ceriole
+---BugSpeak v0.1.3 by @ceriole
 ---Loosely based upon KorboSpeak by @korbosoft
 
 
@@ -90,9 +90,47 @@ function Speech.new(o)
     return o
 end
 
+
 ---@alias SpeechSound string|Sound
 ---@alias SpeechSoundList [SpeechSound]
 ---@alias SpeechSoundMap table<string|number, SpeechSound|SpeechSoundList>
+
+---Add a single sound to speech table. Prefer using addSound or addSounds, which internally use this function.
+---
+---@return self
+---@param sound SpeechSound The speech sound to map.
+---@param chars string? (Optional) If empty or nil, adds it to generic sounds. Otherwise maps the sound to every character in the string.
+---@see Speech.addSound
+---@see Speech.addSounds
+function Speech:registerSound(sound, chars)
+	chars = chars or ''
+	if type(chars) ~= 'string' then
+		error('addSoundSingle illegal mapping argument: "'..chars..'"')
+		return self
+	end
+	if type(sound) ~= 'string' and type(sound) ~= 'Sound' then
+		error('addSoundSingle illegal sound argument: "'..sound..'"')
+		return self
+	end
+
+	if type(sound) == 'string' then
+		local s = sounds[sound]
+		if type(s) ~= 'Sound' then error('BugSpeak: Sound "'..tostring(s)..'" is not a sound resource or string.') return self end
+		sound = s
+	end
+
+	if #chars > 0 then
+		for c in chars:gmatch('.') do
+			if not self.sounds[c] then self.sounds[c] = {} end
+			self.sounds[c][#self.sounds[c]+1] = sound
+		end		
+	else
+		if not self.sounds[''] then self.sounds[''] = {} end
+		self.sounds[''][#self.sounds['']+1] = sound
+	end
+
+	return self
+end
 
 ---Add one or more sounds as a string or Sound resource.
 ---
@@ -112,30 +150,17 @@ end
 ---@see sounds
 ---@see Sound
 function Speech:addSound(sound)
-	if type(sound) == 'string' then
-		local s = sounds[sound]
-		if type(s) ~= 'Sound' then error('BugSpeak: Sound "'..tostring(s)..'" is not a sound resource or string. (multi-sound addSound(...))') return self end
-		sound = s
-	end
-	if type(sound) == 'Sound' then
-		if not self.sounds[''] then self.sounds[''] = {} end
-		self.sounds[''][#self.sounds['']+1] = sound
-	end
-	
-	if type(sound) == 'table' then
+	if type(sound) == 'string' or type(sound) == 'Sound' then
+		self:registerSound(sound)
+	elseif type(sound) == 'table' then
 		for key, s in pairs(sound) do
-			if type(s) == 'string' then
-				s = sounds[s]
-			end
-			if type(s) ~= 'Sound' then error('BugSpeak: Sound "'..tostring(s)..'" is not a sound resource or string. (multi-sound addSound(...))') return self end
-			local chars = type(key) == 'string' and key:lower() or ''
-			for c in chars:gmatch('.') do
-				if not self.sounds[c] then self.sounds[c] = {} end
-				self.sounds[c][#self.sounds[c]+1] = s
-			end
-			if chars == "" then
-				if not self.sounds[''] then self.sounds[''] = {} end
-				self.sounds[''][#self.sounds['']+1] = s
+			if type(key) == 'number' then key = nil end
+			if type(s) == 'table' then
+				for _, v in pairs(s) do
+					self:registerSound(v, key)
+				end
+			else
+				self:registerSound(s, key)
 			end
 		end
 	end
@@ -143,12 +168,15 @@ function Speech:addSound(sound)
 end
 
 local function isImmediateChild(name, prefix)
-	prefix = prefix:gsub('%.+$', '')
-	if prefix == '' then return select(2, name:gsub('%.', '')) == 0 end
-	if name:sub(1, #prefix) ~= prefix then return false end
-	local rest = name:sub(#prefix + 2)
-	if rest == '' then return false end
-	return not rest:find('%.')
+	prefix = prefix:gsub("%.+$", "")
+	if prefix ~= "" then
+		if name:sub(1, #prefix) ~= prefix then
+			return false
+		end
+		local after = name:sub(#prefix + 1)
+		return not after:find("%.")
+	end
+	return not name:find("%.")
 end
 
 ---Add one or more sounds from the custom sound list using a `prefix`.
